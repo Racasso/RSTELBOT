@@ -18,6 +18,7 @@ async def post_init(application: Application) -> None:
     await init_db()
     bot_user = await application.bot.get_me()
     application.bot_data["bot_username"] = bot_user.username
+    await admin.restore_scheduled_jobs(application)
     logging.getLogger(__name__).info(
         "%s uruchomiony jako @%s.", BOT_NAME, bot_user.username or "unknown"
     )
@@ -58,7 +59,7 @@ def build_application() -> Application:
         .build()
     )
     admin.register_handlers(application)
-    # This registers the private non-command text handler that redeems codes.
+    # Registers user commands, Stars checkout/payment handlers, and code redemption.
     user.register_handlers(application)
     application.add_error_handler(error_handler)
     return application

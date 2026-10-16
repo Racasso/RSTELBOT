@@ -1,136 +1,169 @@
-# 🤖 RSTELBOT
+# RSTELBOT
 
-**RSTELBOT** to zaawansowany i w pełni automatyczny bot Telegrama zaprojektowany do dystrybucji darmowych oraz płatnych treści cyfrowych (takich jak e-booki, pliki PDF, materiały wideo czy grafiki). Projekt bazuje na środowisku **Docker**, relacyjnej bazie danych **MySQL 8.0** oraz frameworku **Python `python-telegram-bot`**.
+RSTELBOT to asynchroniczny bot Telegrama do prezentowania i dystrybucji treści cyfrowych. Płatne materiały są udostępniane po potwierdzeniu płatności Telegram Stars. Bot przechowuje treści w prywatnym kanale-magazynie Telegrama i kopiuje je odbiorcom — nie pobiera plików na dysk.
 
----
+## Funkcje
 
-## 🎥 Prezentacja Wideo (YouTube Shorts)
+- Sprzedaż e-booków, plików, wideo i grafik za Telegram Stars (`XTR`).
+- Podgląd produktu: indywidualny albo domyślny obraz dla produktów bez własnego podglądu.
+- Dostarczanie materiału po potwierdzeniu płatności przez Telegram, z `protect_content=True`.
+- Ponowne wysyłanie odblokowanych materiałów przez `/moje`.
+- Publikowanie bezpłatnych materiałów i zapowiedzi produktów na kanale.
+- Trwała kolejka zaplanowanych publikacji przechowywana w MySQL i odtwarzana po restarcie.
+- Administracyjne kody dostępu i ręczne nadawanie dostępu jako wyjątki od standardowej ścieżki zakupu Stars.
+- Ograniczenie prób wpisania błędnego kodu: maksymalnie 5 prób w ciągu 10 minut na użytkownika.
 
-Obejrzyj krótki film pokazujący działanie bota oraz proces odblokowywania treści kodem w praktyce:  
-👉 **[Obejrzyj wideo na YouTube](https://www.youtube.com/watch?v=JdF6iIZhemg)**
+## Co nowego
 
----
+- Standardowy zakup płatnych treści przez faktury Telegram Stars.
+- Ceny produktów zapisywane w bazie oraz podglądy domyślne i przypisane do produktu.
+- Planowanie zapowiedzi i publikacji bezpłatnych materiałów.
+- Zachowanie kodów i ręcznego nadawania dostępu dla administracyjnej obsługi wyjątków.
 
-## 🚀 Główne Funkcje
+## Technologie
 
-* **Darmowa dystrybucja (`/free`):** Błyskawiczne publikowanie materiałów bezpośrednio na oficjalnym kanale.
-* **Magazynowanie treści (Storage):** Bezpieczne przechowywanie kopii zapasowych wszystkich plików w dedykowanym kanale zaplecza.
-* **Zapowiedzi (Teasery):** Tworzenie postów promocyjnych na kanale głównym z interaktywnym przyciskiem „Odblokuj” (`/teaser`).
-* **System unikalnych kodów dostępu:** Generowanie kodów przypisanych do konkretnego Telegram ID, z opcjonalnymi limitami użyć i terminem ważności (`/code`).
-* **Bezpośrednie nadawanie uprawnień (`/grant`):** Szybkie odblokowywanie materiałów z pominięciem kodów.
-* **Panel użytkownika (`/moje`):** Umożliwia klientom ponowne pobranie raz zakupionych lub odblokowanych materiałów w dowolnym momencie.
-* **Zaawansowana ochrona (`protect_content=True`):** Automatyczne zabezpieczenie wysyłanych plików przed przekazywaniem dalej i pobieraniem oraz ochrona przed atakami Brute-Force.
+- Python 3.12 w obrazie Dockera (kod wymaga Pythona 3.11 lub nowszego).
+- `python-telegram-bot` 21+ z JobQueue, tryb asynchroniczny i long polling.
+- MySQL 8, SQLAlchemy 2 async i `aiomysql`.
+- Docker Compose.
 
----
+Bot nie uruchamia serwera WWW ani webhooka. Zaplanowane publikacje obsługuje PTB JobQueue, a ich stan jest zapisany w MySQL.
 
-## 🛠️ Wymagania wstępne
+## Wymagania
 
-Przed uruchomieniem upewnij się, że posiadasz:
+- Docker z obsługą Docker Compose.
+- Bot utworzony przez [@BotFather](https://t.me/BotFather).
+- Publiczny kanał oraz prywatny kanał-magazynowy Telegrama.
+- Bot dodany jako administrator obu kanałów. Do publikacji i edycji postów potrzebuje odpowiednich uprawnień.
 
-1. Zainstalowany **Docker** oraz **Docker Compose**.
-2. Utworzonego bota za pośrednictwem [@BotFather](https://t.me/BotFather) na Telegramie.
-3. Dwa kanały na Telegramie, gdzie Twój bot jest dodany jako **Administrator** z uprawnieniem do wysyłania/edytowania wiadomości:
-   * **Oficjalny Kanał** (widoczny dla klientów)
-   * **Kanał Magazynowy / Storage** (prywatne zaplecze bota)
+## Konfiguracja i uruchomienie
 
----
+1. Utwórz plik `.env` w katalogu głównym na podstawie dołączonej przykładowej konfiguracji `.envEXAMP.example`.
+2. Ustaw wymagane zmienne:
 
-## ⚙️ Instalacja i Uruchomienie (Docker)
+   | Zmienna | Znaczenie |
+   | --- | --- |
+   | `BOT_TOKEN` | Token bota z BotFather. |
+   | `ADMIN_IDS` | Telegram ID administratorów, oddzielone przecinkami. |
+   | `CHANNEL_ID` | ID publicznego kanału. |
+   | `STORAGE_CHAT_ID` | ID prywatnego kanału-magazynu. |
+   | `DATABASE_URL` | Adres MySQL w formacie `mysql+aiomysql://...`. Dane muszą odpowiadać konfiguracji MySQL poniżej. |
+   | `MYSQL_DATABASE` | Nazwa bazy MySQL. |
+   | `MYSQL_USER` | Użytkownik MySQL. |
+   | `MYSQL_PASSWORD` | Hasło użytkownika MySQL. |
+   | `MYSQL_ROOT_PASSWORD` | Hasło administratora MySQL wymagane przez kontener. |
+   | `TERMS_URL` | Publicznie dostępny link do regulaminu. |
+   | `SUPPORT_CONTACT` | Kontakt do obsługi płatności, np. login Telegram lub e-mail. |
+   | `TERMS_VERSION` | Wersja regulaminu zapisywana przy akceptacji; domyślnie `1`. |
+   | `BOT_TIMEZONE` | Strefa czasowa harmonogramu; domyślnie `Europe/Warsaw`. |
 
-1. **Sklonuj repozytorium** lub umieść pliki projektu w wybranym katalogu na swoim komputerze/serwerze.
-2. **Skonfiguruj zmienne środowiskowe** w pliku `.env`:
-   * `TELEGRAM_BOT_TOKEN` – token dostępowy Twojego bota od BotFather.
-   * `ADMIN_IDS` – Twoje Telegram ID (uprawniające do dostępu do panelu administratora).
-   * `CHANNEL_ID` – ID oficjalnego kanału (np. `-100...`).
-   * `STORAGE_CHAT_ID` – ID kanału magazynowego (np. `-100...`).
-   * Dane dostępowe do bazy MySQL.
-3. **Uruchom kontenery w tle:**
+   `TERMS_URL` i `SUPPORT_CONTACT` muszą być ustawione, aby bot pokazał przycisk zakupu. Jeśli hasło MySQL zawiera znaki specjalne, zakoduj je poprawnie w `DATABASE_URL`.
+
+3. Uruchom bazę i bota:
+
    ```bash
-   docker-compose up --build -d
+   docker compose up -d --build
    ```
-4. **Sprawdź logi**, aby upewnić się, że baza MySQL i bot wystartowały bez błędów:
+
+4. Sprawdź kontenery i logi:
+
    ```bash
-   docker-compose logs -f bot
+   docker compose ps
+   docker compose logs -f bot
    ```
 
----
+Zatrzymanie kontenerów bez usuwania bazy:
 
-## 📖 PEŁNA INSTRUKCJA OBSŁUGI
-
-### 👤 Dla Użytkowników / Klientów
-
-* **`/start`** – Rozpoczyna rozmowę z botem i wyświetla Twój unikalny Telegram ID.
-* **`/start <slug>`** – Otwiera kartę płatnej treści na podstawie jej unikalnego oznaczenia (np. `/start kurs-python`). Wyświetla szczegóły zamówienia oraz instruuje, jak przekazać ID administratorowi po płatności.
-* **`/id`** – Wyświetla Twój aktualny Telegram ID (przydatne do skopiowania i wysłania sprzedawcy).
-* **Wpisanie kodu** – Po opłaceniu treści otrzymasz od administratora kod (np. `BOX-8K3M-92PL`). Wpisz go jako **zwykłą wiadomość tekstową** w oknie czatu z botem, aby natychmiast otrzymać plik.
-* **`/moje`** – Wyświetla listę wszystkich przypisanych do Ciebie materiałów i przesyła je ponownie na czat.
-
----
-
-### 👑 Dla Administratorów
-
-> *Wszystkie komendy administracyjne działają wyłącznie w prywatnym czacie z botem i tylko dla numerów ID zdefiniowanych w zmiennej `ADMIN_IDS`.*
-
-#### 1. Publikacja darmowej treści na kanale (`/free`)
-1. Wyślij plik, zdjęcie lub dokument bezpośrednio do bota na czacie prywatnym.
-2. Zrób **Reply (Odpowiedz)** na tę wiadomość z plikiem i wyślij komendę:
-   ```text
-   /free
-   ```
-   *(Bot automatycznie opublikuje materiał na kanale oficjalnym).*
-
-#### 2. Dodawanie płatnej treści do magazynu (`/paid`)
-1. Wyślij materiał (np. PDF lub zdjęcie) do bota.
-2. Zrób **Reply (Odpowiedz)** na tę wiadomość, podając unikalny skrót (*slug*) oraz czytelny tytuł:
-   ```text
-   /paid <slug> <tytuł>
-   ```
-   *Przykład:* `/paid kurs-python Poradnik Python Automation MVP`
-
-#### 3. Publikacja zapowiedzi (Teaser) na kanale (`/teaser`)
-Wyślij w czacie z botem komendę publikującą lub aktualizującą post promocyjny na kanale głównym:
-```text
-/teaser <slug> <opis>
+```bash
+docker compose down
 ```
-*Przykład:* `/teaser kurs-python Odbierz kompletny poradnik i automatyzuj swój biznes! Kliknij Odblokuj poniżej.`
 
-#### 4. Zarządzanie kodami i dostępami
-* **Generowanie kodu dostępu dla klienta:**
-  ```text
-  /code <slug> <telegram_id> [dni] [użycia]
-  ```
-  *Przykłady:*
-  * `/code kurs-python 7617177383` (kod jednorazowy, bezterminowy)
-  * `/code kurs-python 7617177383 30 2` (kod ważny 30 dni, maksymalnie 2 użycia)
-* **Unieważnienie kodu:**
-  ```text
-  /revoke <kod>
-  ```
-* **Bezpośrednie nadanie dostępu (pomijając kody):**
-  ```text
-  /grant <slug> <telegram_id>
-  ```
-* **Odebranie ręcznie nadanego dostępu:**
-  ```text
-  /ungrant <slug> <telegram_id>
-  ```
+Wolumen `mysql_data` przechowuje dane MySQL. Nie używaj `docker compose down -v`, jeśli chcesz zachować bazę. Przy starcie RSTELBOT tworzy brakujące tabele i dodaje nowe pola do istniejącego schematu MVP. Po migracji wcześniejsze płatne produkty nie mają ustawionej ceny Stars — ustaw ją komendą `/price`.
 
-#### 5. Informacje i Statystyki
-* **`/list`** – Wyświetla zestawienie wszystkich zapisanych w bazie treści oraz liczbę użytkowników mających do nich dostęp.
-* **`/stats`** – Pokazuje ogólne podsumowanie statystyczne bota.
+**Bezpieczeństwo:** nie publikuj ani nie commituj pliku `.env`. `.dockerignore` wyklucza go z obrazu Dockera, ale nie zastępuje reguły ignorowania pliku przez Git.
 
----
+## Użycie dla użytkowników
 
-## 🔄 Przykładowy Workflow Zakupu
+| Komenda | Działanie |
+| --- | --- |
+| `/start` | Pokazuje Telegram ID i krótką instrukcję. |
+| `/start <slug>` | Pokazuje kartę płatnego produktu, podgląd i cenę Stars. |
+| `/id` | Pokazuje Telegram ID użytkownika. |
+| `/moje` | Ponownie wysyła wszystkie odblokowane materiały. |
+| `/terms` | Pokazuje skonfigurowany regulamin. |
+| `/paysupport` | Pokazuje kontakt do obsługi płatności. |
 
-1. Klient widzi zapowiedź (*Teaser*) na kanale oficjalnym i klika przycisk **„Odblokuj”**, który przenosi go do czatu z botem.
-2. Klient sprawdza swoje ID komendą `/id` i przesyła je sprzedawcy po opłaceniu zamówienia poza botem.
-3. Administrator generuje unikalny kod za pomocą komendy `/code <slug> <id>` i przekazuje go klientowi.
-4. Klient wkleja kod na czacie z botem jako zwykłą wiadomość i natychmiast otrzymuje zabezpieczony plik.
-5. W przyszłości klient może w każdej chwili odzyskać dostęp do materiałów, wpisując komendę `/moje`.
+Aby kupić produkt, użytkownik otwiera `/start <slug>`, naciska przycisk zakupu i opłaca fakturę Stars. Dostęp jest przyznawany po otrzymaniu przez bota `successful_payment`; samo potwierdzenie pre-checkout nie wystarcza. Link „Odblokuj” w zapowiedzi na kanale otwiera kartę produktu w bocie.
 
----
+## Komendy administratora
 
-## 📝 Licencja
+Wszystkie komendy administratora działają wyłącznie w prywatnym czacie i tylko dla Telegram ID z `ADMIN_IDS`.
 
-Projekt przeznaczony do użytku prywatnego, hobbystycznego oraz komercyjnego w celu automatyzacji sprzedaży treści cyfrowych.
+### Produkty i podglądy
+
+Najpierw wyślij materiał botowi. Następnie odpowiedz na jego wiadomość komendą. Obsługiwane przykłady to zdjęcia, wideo i dokumenty, w tym e-booki PDF.
+
+| Komenda | Działanie |
+| --- | --- |
+| `/paid <slug> <gwiazdki> <tytuł>` | Zapisuje płatny produkt i cenę. Odpowiedz na wiadomość z materiałem. |
+| `/price <slug> <gwiazdki>` | Ustawia lub zmienia cenę istniejącego płatnego produktu. |
+| `/preview_default` | Ustawia domyślny obraz podglądowy. Odpowiedz na zdjęcie. |
+| `/preview <slug>` | Ustawia podgląd konkretnego produktu. Odpowiedz na zdjęcie. |
+| `/preview_clear <slug>` | Usuwa podgląd produktu; bot użyje domyślnego. |
+| `/free` | Natychmiast publikuje bezpłatny materiał. Odpowiedz na wiadomość z materiałem. |
+
+Zdjęcie podglądowe należy wysłać w docelowej jakości. RSTELBOT przechowuje kopię w kanale-magazynie i sam nie zmniejsza rozdzielczości.
+
+### Publikacje na kanale
+
+| Komenda | Działanie |
+| --- | --- |
+| `/teaser <slug> <opis>` | Publikuje lub aktualizuje zapowiedź płatnego produktu. |
+| `/schedule <slug> <RRRR-MM-DDTHH:MM> <opis>` | Planuje zapowiedź płatnego produktu. Czas lokalny według `BOT_TIMEZONE`. |
+| `/schedule_free <RRRR-MM-DDTHH:MM>` | Planuje publikację bezpłatnego materiału. Odpowiedz na jego wiadomość. |
+| `/scheduled` | Pokazuje oczekujące i nieudane publikacje. |
+| `/schedule_cancel <numer>` | Anuluje oczekującą publikację. Numer pobierz z `/scheduled`. |
+
+Przykład zaplanowania zapowiedzi:
+
+```text
+/schedule ebook-start 2027-05-12T18:30 Nowy e-book jest dostępny
+```
+
+Czas musi być przyszły. Harmonogram publikuje zapowiedzi płatnych produktów i wskazane bezpłatne materiały. Płatna treść pozostaje dostępna po zakupie Stars albo nadaniu dostępu przez administratora.
+
+### Kody i ręczne dostępy
+
+To administracyjne wyjątki od standardowego zakupu Stars.
+
+| Komenda | Działanie |
+| --- | --- |
+| `/code <slug> <telegram_id> [dni] [użycia]` | Generuje kod przypisany do Telegram ID. Domyślnie bez terminu i na jedno użycie. |
+| `/revoke <kod>` | Unieważnia kod. |
+| `/grant <slug> <telegram_id>` | Nadaje użytkownikowi dostęp. |
+| `/ungrant <slug> <telegram_id>` | Odbiera użytkownikowi dostęp. |
+| `/list` | Pokazuje produkty, ceny i liczbę dostępów. |
+| `/stats` | Pokazuje liczbę użytkowników, produktów, dostępów, kodów i płatności Stars. |
+
+Użytkownik wprowadza kod jako zwykły tekst w prywatnym czacie z botem. Błędne próby są ograniczone do pięciu w ciągu 10 minut na użytkownika.
+
+## Płatności, regulamin i wsparcie
+
+Płatności za treści cyfrowe są realizowane w Telegram Stars (`XTR`). RSTELBOT zapisuje zamówienie, obsługuje pre-checkout i dostarcza materiał dopiero po potwierdzeniu płatności. Zobacz [dokumentację płatności Telegram Stars](https://core.telegram.org/bots/payments-stars). Telegram wymaga dostępnego regulaminu oraz kontaktu do obsługi płatności.
+
+Przed sprzedażą sprawdź, czy proces zakupu spełnia wymagania prawne dotyczące dostarczania treści cyfrowych. Obecny przycisk zakupu łączy akceptację regulaminu i zakup; nie zbiera osobnego potwierdzenia zgody na natychmiastowe dostarczenie treści i informacji o skutkach dla prawa odstąpienia. Więcej informacji: [UOKiK — wyjątki od prawa odstąpienia](https://prawakonsumenta.uokik.gov.pl/prawo-odstapienia-od-umowy/wylaczenia-prawa-do-odstapienia/).
+
+## Struktura projektu
+
+```text
+bot/
+├── handlers/       # Komendy administratora i użytkownika
+├── services/       # Logika treści, dostępów, kodów i płatności
+├── config.py       # Konfiguracja środowiskowa
+├── db.py           # Async SQLAlchemy i inicjalizacja schematu
+├── main.py         # Long polling i rejestracja handlerów
+└── models.py       # Modele SQLAlchemy
+Dockerfile
+docker-compose.yml
+requirements.txt
+```

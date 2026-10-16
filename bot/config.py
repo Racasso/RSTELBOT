@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
@@ -32,6 +33,10 @@ class Settings:
     channel_id: int
     storage_chat_id: int
     database_url: str
+    timezone: str
+    terms_url: str | None
+    terms_version: str
+    support_contact: str | None
 
 
 def load_settings() -> Settings:
@@ -51,12 +56,22 @@ def load_settings() -> Settings:
     if not database_url.startswith("mysql+aiomysql://"):
         raise RuntimeError("DATABASE_URL musi używać sterownika mysql+aiomysql.")
 
+    timezone_name = os.getenv("BOT_TIMEZONE", "Europe/Warsaw").strip() or "Europe/Warsaw"
+    try:
+        ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise RuntimeError("BOT_TIMEZONE musi być poprawną nazwą strefy IANA.") from exc
+
     return Settings(
         bot_token=_required("BOT_TOKEN"),
         admin_ids=admin_ids,
         channel_id=_parse_int("CHANNEL_ID"),
         storage_chat_id=_parse_int("STORAGE_CHAT_ID"),
         database_url=database_url,
+        timezone=timezone_name,
+        terms_url=os.getenv("TERMS_URL", "").strip() or None,
+        terms_version=os.getenv("TERMS_VERSION", "1").strip() or "1",
+        support_contact=os.getenv("SUPPORT_CONTACT", "").strip() or None,
     )
 
 

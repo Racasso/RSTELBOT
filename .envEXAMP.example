@@ -1,0 +1,24 @@
+# Telegram bot token from @BotFather
+BOT_TOKEN=replace_with_botfather_token
+
+# Telegram user IDs allowed to run admin commands, comma-separated
+ADMIN_IDS=123456789
+
+# Public channel and private Telegram storage channel IDs
+CHANNEL_ID=-1001234567890
+STORAGE_CHAT_ID=-1001234567891
+
+# MySQL 8 credentials
+MYSQL_DATABASE=rstelbot
+MYSQL_USER=rstelbot
+MYSQL_PASSWORD=replace_with_a_long_url_safe_password
+MYSQL_ROOT_PASSWORD=replace_with_a_different_long_password
+DATABASE_URL=mysql+aiomysql://rstelbot:replace_with_a_long_url_safe_password@mysql:3306/rstelbot
+
+# Time zone for scheduled posts
+BOT_TIMEZONE=Europe/Warsaw
+
+# Required before users can purchase digital content with Telegram Stars
+TERMS_URL=
+TERMS_VERSION=1
+SUPPORT_CONTACT=

@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from telegram import Update
@@ -14,7 +15,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 from bot.config import settings
 from bot.db import SessionLocal
-from bot.models import Access, AccessCode, Content, ContentType, User
+from bot.models import Access, AccessCode, Content, ContentType, StarPayment, User
 from bot.services import codes as code_service
 from bot.services import content as content_service
 
@@ -77,25 +78,47 @@ async def free_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def paid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     source = message.reply_to_message
-    if source is None or len(context.args) < 2:
-        await message.reply_text("Użycie: odpowiedz /paid <slug> <tytuł> na wiadomość z treścią.")
+    if source is None or len(context.args) < 3:
+        await message.reply_text(
+            "Użycie: odpowiedz /paid <slug> <gwiazdki> <tytuł> na materiał."
+        )
         return
     slug = context.args[0]
-    title = " ".join(context.args[1:])
     try:
+        stars_price = int(context.args[1])
+        title = " ".join(context.args[2:])
         content = await content_service.create_paid_content(
             context.bot,
             source,
             slug,
+            stars_price,
             title,
         )
         await message.reply_text(
             f"RSTELBOT: zapisana płatna treść „{content.title}” (slug: {content.slug}). "
-            "Użyj /teaser, aby opublikować zapowiedź."
+            f"Cena: {content.stars_price} ⭐. Użyj /teaser, aby opublikować zapowiedź."
         )
     except (ValueError, TelegramError) as exc:
         logger.info("Nie udało się zapisać płatnej treści: %s", exc)
         await message.reply_text(f"RSTELBOT: nie udało się zapisać treści: {exc}")
+
+
+@admin_only
+async def price_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if len(context.args) != 2:
+        await message.reply_text("Użycie: /price <slug> <liczba_gwiazdek>")
+        return
+    try:
+        content = await content_service.set_content_price(
+            context.args[0],
+            int(context.args[1]),
+        )
+        await message.reply_text(
+            f"RSTELBOT: cena „{content.title}” ustawiona na {content.stars_price} ⭐."
+        )
+    except ValueError as exc:
+        await message.reply_text(f"RSTELBOT: {exc}")
 
 
 @admin_only
@@ -123,6 +146,203 @@ async def teaser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except (ValueError, TelegramError) as exc:
         logger.info("Nie udało się opublikować zapowiedzi: %s", exc)
         await message.reply_text(f"RSTELBOT: nie udało się opublikować zapowiedzi: {exc}")
+
+
+def _parse_schedule_time(value: str) -> datetime:
+    try:
+        scheduled_at = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("Podaj datę jako RRRR-MM-DDTHH:MM.") from exc
+    if scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=ZoneInfo(settings.timezone))
+    scheduled_at = scheduled_at.astimezone(timezone.utc)
+    if scheduled_at <= datetime.now(timezone.utc):
+        raise ValueError("Termin publikacji musi być w przyszłości.")
+    return scheduled_at
+
+
+def _display_schedule_time(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    local_value = value.astimezone(ZoneInfo(settings.timezone))
+    return local_value.strftime("%Y-%m-%d %H:%M")
+
+
+def _queue_publication(application: Application, publication) -> None:
+    job_queue = application.job_queue
+    if job_queue is None:
+        raise RuntimeError('Zainstaluj zależność python-telegram-bot[job-queue].')
+    when = publication.scheduled_at.replace(tzinfo=timezone.utc)
+    if when <= datetime.now(timezone.utc):
+        when = timedelta(seconds=1)
+    job_queue.run_once(
+        scheduled_publication_job,
+        when=when,
+        data=publication.id,
+        name=f"publication-{publication.id}",
+    )
+
+
+async def restore_scheduled_jobs(application: Application) -> None:
+    for publication in await content_service.list_pending_publications():
+        _queue_publication(application, publication)
+
+
+async def scheduled_publication_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    publication_id = context.job.data
+    try:
+        await content_service.publish_scheduled_publication(
+            context.bot,
+            publication_id,
+            context.application.bot_data.get("bot_username", ""),
+        )
+    except Exception:
+        logger.exception("Nie udało się opublikować zaplanowanego wpisu %s.", publication_id)
+        for admin_id in settings.admin_ids:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=(
+                        f"RSTELBOT: publikacja zaplanowana pod numerem {publication_id} "
+                        "nie powiodła się. Sprawdź /scheduled."
+                    ),
+                )
+            except TelegramError:
+                logger.warning("Nie udało się powiadomić administratora %s.", admin_id)
+
+
+@admin_only
+async def schedule_teaser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if len(context.args) < 3:
+        await message.reply_text(
+            "Użycie: /schedule <slug> <RRRR-MM-DDTHH:MM> <opis zapowiedzi>"
+        )
+        return
+    try:
+        content = await content_service.get_content_by_slug(context.args[0])
+        if content is None:
+            raise ValueError(f"Nie znaleziono treści o slug '{context.args[0]}'.")
+        scheduled_at = _parse_schedule_time(context.args[1])
+        teaser = " ".join(context.args[2:])
+        publication = await content_service.create_scheduled_publication(
+            content.id,
+            "teaser",
+            scheduled_at,
+            teaser=teaser,
+        )
+        _queue_publication(context.application, publication)
+        await message.reply_text(
+            f"RSTELBOT: zapowiedź zaplanowana na {_display_schedule_time(scheduled_at)} "
+            f"({settings.timezone}). Numer: {publication.id}."
+        )
+    except (ValueError, RuntimeError) as exc:
+        await message.reply_text(f"RSTELBOT: {exc}")
+
+
+@admin_only
+async def schedule_free_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    source = message.reply_to_message
+    if source is None or len(context.args) != 1:
+        await message.reply_text(
+            "Użycie: odpowiedz /schedule_free <RRRR-MM-DDTHH:MM> na materiał."
+        )
+        return
+    try:
+        scheduled_at = _parse_schedule_time(context.args[0])
+        content, _ = await content_service.create_free_content_record(context.bot, source)
+        publication = await content_service.create_scheduled_publication(
+            content.id,
+            "free",
+            scheduled_at,
+        )
+        _queue_publication(context.application, publication)
+        await message.reply_text(
+            f"RSTELBOT: bezpłatna treść zaplanowana na {_display_schedule_time(scheduled_at)} "
+            f"({settings.timezone}). Numer: {publication.id}."
+        )
+    except (ValueError, RuntimeError, TelegramError) as exc:
+        await message.reply_text(f"RSTELBOT: nie udało się zaplanować treści: {exc}")
+
+
+@admin_only
+async def scheduled_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    rows = await content_service.list_scheduled_publications()
+    if not rows:
+        await update.effective_message.reply_text("RSTELBOT: brak oczekujących lub nieudanych publikacji.")
+        return
+    lines = ["Zaplanowane publikacje RSTELBOT:"]
+    for row in rows:
+        content = await content_service.get_content_by_id(row.content_id)
+        title = content.title if content else f"treść {row.content_id}"
+        lines.append(
+            f"• {row.id} | {row.status} | {row.kind} | {title} | "
+            f"{_display_schedule_time(row.scheduled_at)} ({settings.timezone})"
+        )
+    await _reply_in_chunks(update.effective_message, "\n".join(lines))
+
+
+@admin_only
+async def cancel_scheduled_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if len(context.args) != 1:
+        await update.effective_message.reply_text("Użycie: /schedule_cancel <numer>")
+        return
+    try:
+        publication_id = int(context.args[0])
+    except ValueError:
+        await update.effective_message.reply_text("Numer publikacji musi być liczbą.")
+        return
+    cancelled = await content_service.cancel_scheduled_publication(publication_id)
+    await update.effective_message.reply_text(
+        "RSTELBOT: publikacja anulowana."
+        if cancelled
+        else "RSTELBOT: nie znaleziono oczekującej publikacji o tym numerze."
+    )
+
+
+@admin_only
+async def preview_default_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if message.reply_to_message is None:
+        await message.reply_text("Odpowiedz komendą /preview_default na zdjęcie domyślne.")
+        return
+    try:
+        await content_service.set_default_preview(context.bot, message.reply_to_message)
+        await message.reply_text("RSTELBOT: ustawiono domyślny podgląd produktów.")
+    except (ValueError, TelegramError) as exc:
+        await message.reply_text(f"RSTELBOT: nie udało się ustawić podglądu: {exc}")
+
+
+@admin_only
+async def preview_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if message.reply_to_message is None or len(context.args) != 1:
+        await message.reply_text("Użycie: odpowiedz /preview <slug> na zdjęcie poglądowe.")
+        return
+    try:
+        await content_service.set_content_preview(
+            context.bot,
+            context.args[0],
+            message.reply_to_message,
+        )
+        await message.reply_text("RSTELBOT: zapisano podgląd dla produktu.")
+    except (ValueError, TelegramError) as exc:
+        await message.reply_text(f"RSTELBOT: nie udało się ustawić podglądu: {exc}")
+
+
+@admin_only
+async def preview_clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if len(context.args) != 1:
+        await update.effective_message.reply_text("Użycie: /preview_clear <slug>")
+        return
+    try:
+        await content_service.clear_content_preview(context.args[0])
+        await update.effective_message.reply_text(
+            "RSTELBOT: produkt będzie używać podglądu domyślnego."
+        )
+    except ValueError as exc:
+        await update.effective_message.reply_text(f"RSTELBOT: {exc}")
 
 
 @admin_only
@@ -243,8 +463,9 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     lines = ["Treści RSTELBOT (liczba osób z dostępem):"]
     for content, buyers in rows:
+        price = f" | cena: {content.stars_price} ⭐" if content.type == ContentType.PAID else ""
         lines.append(
-            f"• {content.slug} | {content.type.value} | {content.title} | dostęp: {buyers}"
+            f"• {content.slug} | {content.type.value} | {content.title}{price} | dostęp: {buyers}"
         )
     await _reply_in_chunks(message, "\n".join(lines))
 
@@ -262,6 +483,14 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         access_count = await session.scalar(select(func.count()).select_from(Access))
         codes_count = await session.scalar(select(func.count(AccessCode.code)))
+        paid_orders = await session.scalar(
+            select(func.count(StarPayment.payload)).where(StarPayment.status == "paid")
+        )
+        stars_revenue = await session.scalar(
+            select(func.coalesce(func.sum(StarPayment.amount), 0)).where(
+                StarPayment.status == "paid"
+            )
+        )
         active_codes_count = await session.scalar(
             select(func.count(AccessCode.code)).where(AccessCode.revoked_at.is_(None))
         )
@@ -270,6 +499,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         f"Użytkownicy: {users_count}\n"
         f"Treści: {contents_count} (darmowe: {free_count}, płatne: {paid_count})\n"
         f"Nadane dostępy: {access_count}\n"
+        f"Płatności Telegram Stars: {paid_orders} ({stars_revenue} ⭐)\n"
         f"Kody: {codes_count} (bez unieważnienia: {active_codes_count})"
     )
 
@@ -304,7 +534,15 @@ def register_handlers(application: Application) -> None:
     for command, callback in (
         ("free", free_command),
         ("paid", paid_command),
+        ("price", price_command),
         ("teaser", teaser_command),
+        ("schedule", schedule_teaser_command),
+        ("schedule_free", schedule_free_command),
+        ("scheduled", scheduled_command),
+        ("schedule_cancel", cancel_scheduled_command),
+        ("preview_default", preview_default_command),
+        ("preview", preview_command),
+        ("preview_clear", preview_clear_command),
         ("code", code_command),
         ("revoke", revoke_command),
         ("grant", grant_command),
@@ -317,6 +555,11 @@ def register_handlers(application: Application) -> None:
     # Uploaded admin messages are copied to the storage channel immediately;
     # the later /free or /paid reply only needs to persist their message IDs.
     application.add_handler(
-        MessageHandler(filters.ChatType.PRIVATE & ~filters.COMMAND, stage_admin_message),
+        MessageHandler(
+            filters.ChatType.PRIVATE
+            & ~filters.COMMAND
+            & ~filters.SUCCESSFUL_PAYMENT,
+            stage_admin_message,
+        ),
         group=0,
     )

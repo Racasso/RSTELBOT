@@ -43,6 +43,8 @@ class User(Base):
         nullable=False,
         default=utcnow_naive,
     )
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    terms_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class Content(Base):
@@ -60,8 +62,10 @@ class Content(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     teaser: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stars_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
     storage_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     storage_msg_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False)
+    preview_storage_msg_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     channel_msg_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -141,3 +145,74 @@ class StagedUpload(Base):
         nullable=False,
         default=utcnow_naive,
     )
+
+
+class DefaultPreview(Base):
+    """Single reusable fallback preview stored in the Telegram storage channel."""
+
+    __tablename__ = "default_preview"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    storage_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    storage_message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+    )
+
+
+class ScheduledPublication(Base):
+    """Durable queue item for a free channel post or paid-content teaser."""
+
+    __tablename__ = "scheduled_publications"
+    __table_args__ = (
+        Index("ix_scheduled_publications_status_at", "status", "scheduled_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    content_id: Mapped[int] = mapped_column(
+        ForeignKey("contents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    teaser: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    channel_msg_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=utcnow_naive,
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class StarPayment(Base):
+    """Telegram Stars invoice intent and its verified successful payment."""
+
+    __tablename__ = "star_payments"
+    __table_args__ = (
+        Index("uq_star_payments_telegram_charge_id", "telegram_charge_id", unique=True),
+        Index("ix_star_payments_user_content", "telegram_id", "content_id"),
+    )
+
+    payload: Mapped[str] = mapped_column(String(64), primary_key=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    content_id: Mapped[int] = mapped_column(
+        ForeignKey("contents.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="XTR")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    telegram_charge_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=utcnow_naive,
+    )
+    prechecked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
