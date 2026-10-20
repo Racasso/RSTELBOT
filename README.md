@@ -91,7 +91,7 @@ Wolumen `mysql_data` przechowuje dane MySQL. Nie używaj `docker compose down -v
 | `/id` | Pokazuje Telegram ID użytkownika. |
 | `/moje` | Ponownie wysyła wszystkie odblokowane materiały. |
 | `/terms` | Pokazuje skonfigurowany regulamin. |
-| `/paysupport` | Pokazuje kontakt do obsługi płatności. |
+| `/paysupport`, `/contact` | Pokazuje kontakt do obsługi płatności. |
 
 Aby kupić produkt, użytkownik otwiera `/start <slug>`, naciska przycisk zakupu i opłaca fakturę Stars. Dostęp jest przyznawany po otrzymaniu przez bota `successful_payment`; samo potwierdzenie pre-checkout nie wystarcza. Link „Odblokuj” w zapowiedzi na kanale otwiera kartę produktu w bocie.
 

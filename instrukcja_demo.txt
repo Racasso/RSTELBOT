@@ -1,0 +1,10 @@
+TELEGRAM KOD
+/paid demo-kod 10 Materiał demo
+/code demo-kod ID_UŻYTKOWNIKA
+/teaser demo-kod Odblokuj materiał demo
+
+TELEGRAM STARS
+
+/paid demo-stars 10 Materiał demo
+
+/schedule demo-stars 2026-10-20T18:00 Materiał demo dostępny tutaj

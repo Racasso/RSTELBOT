@@ -331,6 +331,7 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("moje", my_contents_command), group=1)
     application.add_handler(CommandHandler("terms", terms_command), group=1)
     application.add_handler(CommandHandler("paysupport", paysupport_command), group=1)
+    application.add_handler(CommandHandler("contact", paysupport_command), group=1)
     application.add_handler(CallbackQueryHandler(buy_callback, pattern=r"^buy:\d+$"), group=1)
     application.add_handler(PreCheckoutQueryHandler(precheckout_handler), group=1)
     application.add_handler(
